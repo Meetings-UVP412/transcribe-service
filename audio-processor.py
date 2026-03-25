@@ -68,6 +68,26 @@ class AudioService:
             logger.error(f"Ошибка сети: {str(e)}")
             return None
 
+    def update_meeting_text(self, uuid: str, text: str) -> bool:
+        url = f"{self.api_base_url}/api/meetings/updateText/{uuid}"
+        try:
+            logger.info(f"Отправка текста в API: uuid={uuid}, длина={len(text)} символов")
+            response = self.session.patch(
+                url,
+                data=text.encode('utf-8'),
+                headers={'Content-Type': 'text/plain; charset=utf-8'},
+                timeout=10
+            )
+            response.raise_for_status()
+            logger.info(f"Текст успешно добавлен к встрече {uuid}")
+            return True
+        except requests.exceptions.HTTPError as e:
+            logger.error(f"Ошибка API при обновлении текста ({response.status_code}): {response.text[:200]}")
+            return False
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Ошибка сети при обновлении текста: {str(e)}")
+            return False
+
 
 class ChunkDownloadedEvent:
     def __init__(self, uuid_str: str, ord_num: int, is_last: bool, duration: int):
@@ -137,6 +157,11 @@ def process_event(event: ChunkDownloadedEvent) -> dict:
 
     logger.info("=" * 70)
     full_text = full_text.strip()
+
+    formatted_text = f"\n[{format_time(event.duration)}] {full_text}"
+
+    if not audio_service.update_meeting_text(event.uuid, formatted_text):
+        logger.warning(f"Не удалось сохранить текст в redis для встречи {event.uuid}")
 
     return {
         "uuid": event.uuid,
