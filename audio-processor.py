@@ -60,12 +60,12 @@ class AudioService:
 
         except requests.exceptions.HTTPError as e:
             if response.status_code == 404:
-                logger.warning(f"⚠️ Чанк не найден: uuid={uuid}, ord={ord_num}")
+                logger.warning(f"Чанк не найден: uuid={uuid}, ord={ord_num}")
             else:
-                logger.error(f"❌ Ошибка API ({response.status_code}): {response.text[:200]}")
+                logger.error(f"Ошибка API ({response.status_code}): {response.text[:200]}")
             return None
         except requests.exceptions.RequestException as e:
-            logger.error(f"❌ Ошибка сети: {str(e)}")
+            logger.error(f"Ошибка сети: {str(e)}")
             return None
 
 
@@ -90,17 +90,13 @@ class ChunkDownloadedEvent:
 
 
 def process_event(event: ChunkDownloadedEvent) -> dict:
-    logger.info(f"🔧 Начало обработки: {event}")
+    logger.info(f"Начало обработки: {event}")
 
-    # 1. Загрузка аудио С ПРОВЕРКОЙ
     result = audio_service.get_audio_chunk(event.uuid, event.ord)
     if result is None:
-        raise RuntimeError(
-            f"Не удалось загрузить аудио для встречи {event.uuid} чанк {event.ord}. "
-            f"Проверьте: 1) Доступность {Config.MEETINGS_API_URL} 2) Существование чанка в Redis"
-        )
+        raise RuntimeError(f"Не удалось загрузить аудио для встречи {event.uuid} чанк {event.ord}. ")
 
-    audio_data, content_type = result  # Теперь безопасно распаковываем
+    audio_data, content_type = result
 
     if not audio_data or len(audio_data) < 100:
         raise ValueError(f"Получены пустые/некорректные аудиоданные ({len(audio_data)} байт)")
@@ -116,7 +112,7 @@ def process_event(event: ChunkDownloadedEvent) -> dict:
             tmp.write(audio_data)
             tmp.flush()
 
-            logger.info(f"🧠 Запуск транскрипции (модель: small, язык: ru)...")
+            logger.info(f"Запуск транскрипции...")
             result = whisper_model.transcribe(
                 tmp.name,
                 language="ru",
@@ -178,7 +174,7 @@ def declare_queue(channel):
     channel.exchange_declare(exchange=EXCHANGE_NAME, exchange_type='topic', durable=True)
     channel.queue_declare(queue=QUEUE_NAME, durable=True)
     channel.queue_bind(exchange=EXCHANGE_NAME, queue=QUEUE_NAME, routing_key=ROUTING_KEY)
-    logger.info(f"✅ Очередь '{QUEUE_NAME}' привязана к exchange '{EXCHANGE_NAME}'")
+    logger.info(f"Очередь '{QUEUE_NAME}' привязана к exchange '{EXCHANGE_NAME}'")
 
 
 def publish_result(channel, result: dict):
@@ -189,61 +185,56 @@ def publish_result(channel, result: dict):
         routing_key=RESULT_ROUTING_KEY,
         body=json.dumps(result, ensure_ascii=False).encode('utf-8'),
         properties=pika.BasicProperties(
-            delivery_mode=2,  # Persistent message
+            delivery_mode=2,
             content_type='application/json',
             content_encoding='utf-8'
         )
     )
-    logger.info(f"📤 Результат опубликован в очередь: {RESULT_ROUTING_KEY}")
+    logger.info(f"Результат опубликован в очередь: {RESULT_ROUTING_KEY}")
 
 
 def callback(ch, method, properties, body):
     logger.info(f"\n{'=' * 70}")
-    logger.info(f"📨 Получено сообщение (delivery_tag={method.delivery_tag})")
+    logger.info(f"Получено сообщение (delivery_tag={method.delivery_tag})")
 
     try:
-        # Декодирование и парсинг
         body_str = body.decode('utf-8')
         data = json.loads(body_str)
         event = ChunkDownloadedEvent.from_dict(data)
-        logger.info(f"📦 Распаршено событие: {event}")
+        logger.info(f"Распаршено событие: {event}")
 
-        # Обработка с транскрипцией
         result = process_event(event)
 
-        # Публикация результата
         publish_result(ch, result)
 
-        # Подтверждение обработки
         ch.basic_ack(delivery_tag=method.delivery_tag)
-        logger.info(f"✅ Сообщение {method.delivery_tag} подтверждено")
+        logger.info(f"Сообщение {method.delivery_tag} подтверждено")
 
     except UnicodeDecodeError:
-        logger.warning("⚠️ Сообщение не в UTF-8 (возможно, Java-сериализация). Пропускаем.")
+        logger.warning("Сообщение не в UTF-8")
         ch.basic_ack(delivery_tag=method.delivery_tag)
 
     except json.JSONDecodeError as e:
-        logger.error(f"❌ Ошибка парсинга JSON: {e}")
+        logger.error(f"Ошибка парсинга JSON: {e}")
         ch.basic_nack(delivery_tag=method.delivery_tag, requeue=False)
 
     except Exception as e:
-        logger.exception(f"❌ Критическая ошибка обработки: {e}")
+        logger.exception(f"Критическая ошибка обработки: {e}")
         ch.basic_nack(delivery_tag=method.delivery_tag, requeue=True)
 
 
 def main():
     global audio_service, whisper_model
 
-    logger.info("🚀 Запуск Audio Processor Service")
+    logger.info("Запуск Audio Processor Service")
     audio_service = AudioService(api_base_url=Config.MEETINGS_API_URL)
 
-    logger.info("Загрузка модели Whisper 'small'...")
+    logger.info("Загрузка модели Whisper...")
     try:
         whisper_model = whisper.load_model("small")
-        logger.info("✅ Модель Whisper загружена")
+        logger.info("Модель Whisper загружена")
     except Exception as e:
-        logger.critical(f"❌ Невозможно загрузить модель Whisper: {e}")
-        logger.critical("Убедитесь, что установлены: pip install openai-whisper && brew install ffmpeg")
+        logger.critical(f"Невозможно загрузить модель Whisper: {e}")
         return
 
     try:
@@ -253,7 +244,7 @@ def main():
         channel.basic_qos(prefetch_count=1)
         channel.basic_consume(queue=QUEUE_NAME, on_message_callback=callback)
 
-        logger.info(f"\n✅ Сервис готов к обработке сообщений")
+        logger.info(f"\nСервис готов к обработке сообщений")
         logger.info(f"Очередь: {QUEUE_NAME} | Routing Key: {ROUTING_KEY}")
         logger.info(f"Модель: whisper-small | Язык: ru")
         logger.info("=" * 70)
@@ -261,15 +252,15 @@ def main():
         channel.start_consuming()
 
     except KeyboardInterrupt:
-        logger.info("\n🛑 Сервис остановлен пользователем")
+        logger.info("\nСервис остановлен пользователем")
     except pika.exceptions.AMQPConnectionError as e:
-        logger.error(f"❌ Ошибка подключения к RabbitMQ: {e}")
+        logger.error(f"Ошибка подключения к RabbitMQ: {e}")
     except Exception as e:
-        logger.exception(f"❌ Неожиданная ошибка: {e}")
+        logger.exception(f"Неожиданная ошибка: {e}")
     finally:
         if 'connection' in locals() and connection.is_open:
             connection.close()
-            logger.info("🔌 Соединение с RabbitMQ закрыто")
+            logger.info("Соединение с RabbitMQ закрыто")
 
 
 if __name__ == "__main__":
