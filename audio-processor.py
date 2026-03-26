@@ -119,7 +119,7 @@ def process_event(event: ChunkDownloadedEvent) -> dict:
     audio_data, content_type = result
 
     if not audio_data or len(audio_data) < 100:
-        raise ValueError(f"Получены пустые/некорректные аудиоданные ({len(audio_data)} байт)")
+        raise ValueError(f"Получены пустые аудиоданные ({len(audio_data)} байт)")
 
     suffix = '.wav'
     if 'mpeg' in content_type.lower():
@@ -152,15 +152,14 @@ def process_event(event: ChunkDownloadedEvent) -> dict:
     for segment in result["segments"]:
         start_fmt = format_time(segment["start"])
         text = segment['text'].strip()
-        logger.info(f"{start_fmt} {text}")
+        # logger.info(f"{start_fmt} {text}")
         full_text += text + " "
 
     logger.info("=" * 70)
     full_text = full_text.strip()
+    logger.warning(f"fullText: {full_text}")
 
-    formatted_text = f"\n[{format_time(event.duration)}] {full_text}"
-
-    if not audio_service.update_meeting_text(event.uuid, formatted_text):
+    if not audio_service.update_meeting_text(event.uuid, full_text):
         logger.warning(f"Не удалось сохранить текст в redis для встречи {event.uuid}")
 
     return {
@@ -168,17 +167,8 @@ def process_event(event: ChunkDownloadedEvent) -> dict:
         "ord": event.ord,
         "isLast": event.isLast,
         "duration": event.duration,
-        "transcription": full_text,
-        "segments": [
-            {
-                "start": seg["start"],
-                "end": seg["end"],
-                "text": seg["text"].strip()
-            } for seg in result["segments"]
-        ],
         "success": True,
-        "timestamp": datetime.now().isoformat(),
-        "processor": "whisper-small-ru"
+        "timestamp": datetime.now().isoformat()
     }
 
 
@@ -259,7 +249,7 @@ def main():
         whisper_model = whisper.load_model("small")
         logger.info("Модель Whisper загружена")
     except Exception as e:
-        logger.critical(f"Невозможно загрузить модель Whisper: {e}")
+        logger.critical(f"Модель Whisper не загружена: {e}")
         return
 
     try:
@@ -271,7 +261,6 @@ def main():
 
         logger.info(f"\nСервис готов к обработке сообщений")
         logger.info(f"Очередь: {QUEUE_NAME} | Routing Key: {ROUTING_KEY}")
-        logger.info(f"Модель: whisper-small | Язык: ru")
         logger.info("=" * 70)
 
         channel.start_consuming()
@@ -281,7 +270,7 @@ def main():
     except pika.exceptions.AMQPConnectionError as e:
         logger.error(f"Ошибка подключения к RabbitMQ: {e}")
     except Exception as e:
-        logger.exception(f"Неожиданная ошибка: {e}")
+        logger.exception(f"Ошибка: {e}")
     finally:
         if 'connection' in locals() and connection.is_open:
             connection.close()
