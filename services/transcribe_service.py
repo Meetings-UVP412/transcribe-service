@@ -102,7 +102,8 @@ class TranscribeService:
 
             result = self.process_event(event)
 
-            publish_result(ch, result)
+            if event.isLast:
+                publish_result(ch, result)
 
             ch.basic_ack(delivery_tag=method.delivery_tag)
             logger.info(f"Сообщение {method.delivery_tag} подтверждено")
