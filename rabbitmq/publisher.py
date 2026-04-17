@@ -21,6 +21,6 @@ def publish_result(channel, result: dict):
             content_encoding='utf-8'
         )
     )
-    logger.info("Результат опубликован в очередь: {RESULT_ROUTING_KEY}")
+    logger.info(f"Результат опубликован в очередь: {RESULT_ROUTING_KEY}")
 
     return f"Результат опубликован в очередь: {RESULT_ROUTING_KEY}"
